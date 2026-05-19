@@ -1,28 +1,33 @@
- 
-# Linux Driver for VINSA 1060 Plus Drawing Tablet (V3)
+# Linux Driver for VINSA 1060 Plus Drawing Tablet (3.1)
 
-Linux driver for the VINSA 1060 Plus drawing tablet with full pressure sensitivity and button support. Chipset: 08f2:6811
+This repository is a fork of the project [btomaev/Tablet-VINSA-1060-Plus-Linux-Driver](https://github.com/btomaev/Tablet-VINSA-1060-Plus-Linux-Driver).
 
-_(It would be interesting if someone has a Huion H1060p tablet and can test the driver to see if it works.)_
+## 🌟 About this Fork and Credits
 
-The [marvinbelfort](https://github.com/marvinbelfort/mx002_linux_driver) driver has been adapted and expanded for this graphics tablet, improving sensitivity and providing two modes of use: one mouse-like, which uses a smaller area of ​​the tablet and is also customizable according to preferences, and another tablet-like mode, which occupies the entire area and offers greater sensitivity for artistic drawing imitating the Windows driver.
+The massive bulk of the work to enhance this driver was beautifully executed by the author of the original fork (**btomaev**) who implemented:
+- GUI to adjust settings on the fly.
+- Support for hardware express keys and the top touch-sensitive multimedia buttons.
+- Automatic reconnection system (Hotplug) if the USB cable gets disconnected.
+- Advanced dynamic cursor smoothing.
 
-## Whats new
-- Added support for media buttons
-- Added threshold and sensitivity settings via the GUI and configuration file
-- Implemented hotplug
-- Fixed cursor teleportation from the upper to the lower border
-- Improved cursor smoothing
-- Removed mouse mode and settings via tablet buttons
-- Minor bug fixes
+## 🛠 What's Fixed in This Version (My Patch)
 
-## 📦 Installation
-You need to have Rust installed previously.
+In the original code, drawing quickly in graphic design software (such as Krita, GIMP, or Inkscape) produced an annoying **staircase effect / jagged lines**. This occurred because the $X$ and $Y$ coordinates, along with the pen pressure, were sent to the Linux input subsystem (`uinput`/`evdev`) as separate, consecutive micro-packets.
 
-Clone the repository
+**This patch completely resolves the issue:**
+- The event emission function in `virtual_device.rs` has been rewritten to pack coordinate axis changes and pressure data into a **single atomic array**.
+- Now, the Linux kernel receives the data for the new point simultaneously, making the drawn lines perfectly smooth, continuous, and calligraphically precise.
+
+---
+
+## 📦 Installation and Setup
+
+### 1. Building the Driver
+You will need the Rust compiler (Cargo) installed on your system beforehand.
+
 ```bash
-git clone https://github.com/btomaev/Tablet-VINSA-1060-Plus-Linux-Driver.git vinsa-1060-driver
-cd vinsa-1060-driver
+git clone https://github.com/poison-flower/Tablet-VINSA-1060-Plus-Linux-Driver.git vinsa-1060-driver.git
+cd vinsa-1060-driver/driver/
 ```
 
 Build the driver
@@ -31,7 +36,6 @@ cargo build --release
 chmod +x target/release/v1060p-driver
 sudo cp target/release/v1060p-driver /usr/bin/
 ```
-
 For Install udev rules
 ```bash
 cat <<EOF | sudo tee -a /etc/udev/rules.d/99-vinsa-tablet.rules
@@ -40,23 +44,22 @@ SUBSYSTEM=="input", GROUP="input", MODE="0666"
 KERNEL=="uinput", MODE="0666", GROUP="input"
 EOF
 ```
+or use nano
 
+Check
+```bash
+cat /etc/udev/rules.d/99-vinsa-tablet.rules
+```
 Reload rules
 ```bash
 sudo udevadm control --reload-rules
 sudo udevadm trigger
 ```
-
-## Configuration
+## Configuration 
 Run 
 ```bash
 v1060p-driver --config
 ```
-and adjust settings or edit `~/.config/v1060p-driver/settings.json`
+and adjust settings or edit ~/.config/v1060p-driver/settings.json
 
 No driver reload needed!
-
-## References
-- [marvinbelfort](https://github.com/marvinbelfort) - Initial research
-- [DIGImend/10moons-tools](https://github.com/DIGImend/10moons-tools) - Expanded mode enablement
-- [alex-s-v/10moons-driver](https://github.com/alex-s-v/10moons-driver) - User-space driver approach
