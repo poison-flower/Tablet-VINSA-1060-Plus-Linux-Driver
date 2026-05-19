@@ -22,9 +22,7 @@ In the original code, drawing quickly in graphic design software (such as Krita,
 
 ## 📦 Installation and Setup
 
-### 1. Building the Driver
 You will need the Rust compiler (Cargo) installed on your system beforehand.
-
 ```bash
 git clone https://github.com/poison-flower/Tablet-VINSA-1060-Plus-Linux-Driver.git vinsa-1060-driver.git
 cd vinsa-1060-driver/driver/
@@ -55,11 +53,52 @@ Reload rules
 sudo udevadm control --reload-rules
 sudo udevadm trigger
 ```
-## Configuration 
-Run 
+## 🛠 Run and Configuration 
+Run driver
+```bash
+v1060p-driver 
+```
+Run config
 ```bash
 v1060p-driver --config
 ```
 and adjust settings or edit ~/.config/v1060p-driver/settings.json
 
 No driver reload needed!
+
+## 🔄 Running as a System Service (systemd)
+
+If you want the driver to start automatically in the background when your computer boots up (so you don't have to keep a terminal window open), you can set it up as a `systemd` service.
+
+Create the Service File
+Open your terminal and create a new service configuration file:
+```bash
+sudo nano /etc/systemd/system/v1060p.service
+```
+Paste the Configuration
+```bash
+[Unit]
+Description=VINSA 1060 Plus Tablet Driver
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/v1060p-driver
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+```
+Enable and Start the Service
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now v1060p
+```
+```bash
+sudo systemctl status v1060p
+```
+To view system logs
+```
+sudo journalctl -u v1060p -f
+```
