@@ -340,34 +340,33 @@ impl DeviceDispatcher {
         if is_multimedia_area {
             return;
         }
-        self.virtual_pen
-            .emit(&[InputEvent::new(
+
+        let events = [
+            InputEvent::new(
                 EventType::ABSOLUTE,
                 AbsoluteAxisType::ABS_X.0,
-                x,
-            )])
-            .expect("Error emitting ABS_X.");
-        self.virtual_pen
-            .emit(&[InputEvent::new(
+                x.clamp(0, Self::MAX_X)
+            ),
+            InputEvent::new(
                 EventType::ABSOLUTE,
                 AbsoluteAxisType::ABS_Y.0,
                 y.clamp(0, Self::MAX_Y),
-            )])
-            .expect("Error emitting ABS_Y.");
-        self.virtual_pen
-            .emit(&[InputEvent::new(
+            ),
+            InputEvent::new(
                 EventType::ABSOLUTE,
                 AbsoluteAxisType::ABS_PRESSURE.0,
-                pressure,
-            )])
-            .expect("Error emitting Pressure.");
-        self.virtual_pen
-            .emit(&[InputEvent::new(
+                pressure
+            ),
+            InputEvent::new(
                 EventType::KEY,
                 Key::BTN_TOOL_PEN.code(),
-                1
-            )])
-            .expect("Error emitting pen presense");
+                            1
+            ),
+        ];
+
+        self.virtual_pen
+        .emit(&events)
+        .expect("Error emitting pen input packet.");
     }
 
     fn pen_emit_touch(&mut self, x: i32, is_multimedia_area: bool, normalized_pressure: i32) {
