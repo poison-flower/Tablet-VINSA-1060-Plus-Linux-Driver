@@ -1,4 +1,4 @@
-# Linux Driver for VINSA 1060 Plus Drawing Tablet (3.1)
+# Linux Driver for VINSA 1060 Plus Drawing Tablet (3.2)
 
 This repository is a fork of the project [btomaev/Tablet-VINSA-1060-Plus-Linux-Driver](https://github.com/btomaev/Tablet-VINSA-1060-Plus-Linux-Driver).
 
@@ -16,7 +16,15 @@ In the original code, drawing quickly in graphic design software (such as Krita,
 
 **This patch completely resolves the issue:**
 - The event emission function in `virtual_device.rs` has been rewritten to pack coordinate axis changes and pressure data into a **single atomic array**.
-- Now, the Linux kernel receives the data for the new point simultaneously, making the drawn lines perfectly smooth, continuous, and calligraphically precise.
+- Now, the Linux kernel receives the data for the new point simultaneously, making the drawn lines perfectly smooth.
+
+## Some additional features and fixes
+- Pressure hysteresis — eliminates hook artifacts at the end of strokes; configurable via the settings GUI (`Release Threshold Multiplier`)
+- Coordinate snap on touch — cursor no longer drifts from the previous lift point when starting a new stroke
+- Media key fix — media keys no longer emit a spurious release event when lifting the pen from the drawing surface
+- Safe USB endpoint handling — driver returns a proper error instead of writing to endpoint address 0 if initialization fails
+- Clean shutdown — config monitor thread now exits correctly on SIGINT/SIGTERM
+- Settings GUI — added slider for `Release Threshold Multiplier` (1.0–2.0)
 
 ---
 
@@ -62,7 +70,7 @@ Run config
 ```bash
 v1060p-driver --config
 ```
-and adjust settings or edit ~/.config/v1060p-driver/settings.json
+and adjust settings or edit ```~/.config/v1060p-driver/settings.json```
 
 No driver reload needed!
 
@@ -99,6 +107,36 @@ sudo systemctl enable --now v1060p
 sudo systemctl status v1060p
 ```
 To view system logs
-```
+```bash
 sudo journalctl -u v1060p -f
 ```
+## ⚠️ System Hang / Slow Boot with Tablet Connected
+
+The VINSA 1060 Plus presents itself as a USB Mass Storage device (fake CD-ROM) before switching to HID mode. During system boot, the Linux kernel attempts to initialize this fake CD-ROM, which causes:
+
+- A noticeable delay during boot with the cursor blinking
+- In some cases, USB controller stalls that prevent other devices on the same bus (hubs, controllers, dongles) from initializing correctly — resulting in `error -71 (EPROTO)` in `dmesg`
+
+### Fix
+
+Add a `usb-storage` quirk to tell the kernel to skip the Mass Storage phase entirely (it's useless on linux anyway):
+
+```bash
+echo 'options usb-storage quirks=08f2:6811:i' | sudo tee /etc/modprobe.d/tablet-quirk.conf
+```
+
+Then rebuild the initramfs:
+
+```bash
+# Arch / CachyOS / Manjaro
+sudo mkinitcpio -P
+
+# Ubuntu / Debian
+sudo update-initramfs -u
+
+# Fedora
+sudo dracut --force
+```
+
+Reboot. The boot delay should be gone and all USB devices should initialize cleanly.
+
