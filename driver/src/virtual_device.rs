@@ -36,18 +36,12 @@ impl RawDataReader {
         (high as u16) << 8 | low as u16
     }
 
-    fn i16_from_2_u8(&self, high: u8, low: u8) -> i16 {
-        ((high as u16) << 8 | low as u16) as i16
-    }
-
     fn x_axis(&self) -> i32 {
-        let raw = self.i16_from_2_u8(self.data[Self::X_AXIS_HIGH], self.data[Self::X_AXIS_LOW]);
-        raw as i32
+        self.u16_from_2_u8(self.data[Self::X_AXIS_HIGH], self.data[Self::X_AXIS_LOW]) as i16 as i32
     }
 
     fn y_axis(&self) -> i32 {
-        let raw = self.i16_from_2_u8(self.data[Self::Y_AXIS_HIGH], self.data[Self::Y_AXIS_LOW]);
-        raw as i32
+        self.u16_from_2_u8(self.data[Self::Y_AXIS_HIGH], self.data[Self::Y_AXIS_LOW]) as i16 as i32
     }
 
     fn pressure(&self) -> i32 {
@@ -85,6 +79,9 @@ pub struct DeviceDispatcher {
     virtual_keyboard: VirtualDevice,
     media_keyboard: VirtualDevice,
     was_touching: bool,
+    /// Tracks whether the pen was in the multimedia strip on the previous frame.
+    /// Used to avoid spuriously releasing a media key when lifting from the drawing surface.
+    was_in_multimedia_area: bool,
     last_x: f32,
     last_y: f32,
     media_button_width: i32,
@@ -99,9 +96,50 @@ impl DeviceDispatcher {
     const MAX_PRESSURE: i32 = 8191;
     const RAW_PRESSURE_POINTS: i32 = 2000;
     const MEDIA_BUTTONS_COUNT: i32 = 10;
+    /// Button bit-indices that are not mapped to any action and must be skipped.
+    const SKIPPED_BUTTON_INDICES: &'static [u8] = &[10, 11];
 
     pub fn new(config: Arc<RwLock<AppConfig>>) -> Self {
-        let default_media_button_id_to_key_code_map: HashMap<u8, Vec<Key>> = [
+        let media_map = Self::build_media_button_map();
+        let tablet_map = Self::build_tablet_button_map();
+        let pen_map = Self::build_pen_button_map();
+
+        let virtual_pen = Self::virtual_pen_builder(
+            &pen_map.values().flatten().cloned().collect::<Vec<Key>>(),
+        )
+        .expect("Error building virtual pen");
+
+        let virtual_keyboard = Self::virtual_keyboard_builder(
+            &tablet_map.values().flatten().cloned().collect::<Vec<Key>>(),
+        )
+        .expect("Error building virtual keyboard");
+
+        let media_keyboard = Self::virtual_keyboard_builder(
+            &media_map.values().flatten().cloned().collect::<Vec<Key>>(),
+        )
+        .expect("Error building media keyboard");
+
+        DeviceDispatcher {
+            config,
+            tablet_last_raw_pressed_buttons: 0xFFFF,
+            pen_last_raw_pressed_button: 0,
+            last_pressed_media_button: 0,
+            media_button_id_to_key_code_map: media_map,
+            tablet_button_id_to_key_code_map: tablet_map,
+            pen_button_id_to_key_code_map: pen_map,
+            virtual_pen,
+            virtual_keyboard,
+            media_keyboard,
+            was_touching: false,
+            was_in_multimedia_area: false,
+            last_x: (Self::MAX_X / 2) as f32,
+            last_y: (Self::MAX_Y / 2) as f32,
+            media_button_width: Self::MAX_X / Self::MEDIA_BUTTONS_COUNT,
+        }
+    }
+
+    fn build_media_button_map() -> HashMap<u8, Vec<Key>> {
+        [
             (0, vec![Key::KEY_MUTE]),
             (1, vec![Key::KEY_VOLUMEDOWN]),
             (2, vec![Key::KEY_VOLUMEUP]),
@@ -113,11 +151,12 @@ impl DeviceDispatcher {
             (8, vec![Key::KEY_CALC]),
             (9, vec![Key::KEY_LEFTMETA, Key::KEY_D]),
         ]
-        .iter()
-        .cloned()
-        .collect();
+        .into_iter()
+        .collect()
+    }
 
-        let default_tablet_button_id_to_key_code_map: HashMap<u8, Vec<Key>> = [
+    fn build_tablet_button_map() -> HashMap<u8, Vec<Key>> {
+        [
             (0, vec![Key::KEY_TAB]),                        // TAB
             (1, vec![Key::KEY_SPACE]),                      // SPACE
             (2, vec![Key::KEY_LEFTALT]),                    // ALT
@@ -131,58 +170,27 @@ impl DeviceDispatcher {
             (12, vec![Key::KEY_B]),                         // TOGGLE MOUSE/TABLET
             (13, vec![Key::KEY_RIGHTBRACE]),                // MOUSE AREA +
         ]
-        .iter()
-        .cloned()
-        .collect();
+        .into_iter()
+        .collect()
+    }
 
-        let default_pen_button_id_to_key_code_map: HashMap<u8, Vec<Key>> =
-            [(4, vec![Key::BTN_STYLUS]), (6, vec![Key::BTN_STYLUS2])]
-                .iter()
-                .cloned()
-                .collect();
-
-        DeviceDispatcher {
-            config: config,
-            tablet_last_raw_pressed_buttons: 0xFFFF,
-            pen_last_raw_pressed_button: 0,
-            last_pressed_media_button: 0,
-            media_button_id_to_key_code_map: default_media_button_id_to_key_code_map.clone(),
-            tablet_button_id_to_key_code_map: default_tablet_button_id_to_key_code_map.clone(),
-            pen_button_id_to_key_code_map: default_pen_button_id_to_key_code_map.clone(),
-            virtual_pen: Self::virtual_pen_builder(
-                &default_pen_button_id_to_key_code_map
-                    .values()
-                    .flatten()
-                    .cloned()
-                    .collect::<Vec<Key>>(),
-            )
-            .expect("Error building virtual pen"),
-            virtual_keyboard: Self::virtual_keyboard_builder(
-                &default_tablet_button_id_to_key_code_map
-                    .values()
-                    .flatten()
-                    .cloned()
-                    .collect::<Vec<Key>>(),
-            )
-            .expect("Error building virtual keyboard"),
-            media_keyboard: Self::virtual_keyboard_builder(
-                &default_media_button_id_to_key_code_map
-                    .values()
-                    .flatten()
-                    .cloned()
-                    .collect::<Vec<Key>>(),
-            )
-            .expect("Error building media keyboard"),
-            was_touching: false,
-            last_x: (Self::MAX_X / 2) as f32,
-            last_y: (Self::MAX_Y / 2) as f32,
-            media_button_width: Self::MAX_X / Self::MEDIA_BUTTONS_COUNT,
-        }
+    fn build_pen_button_map() -> HashMap<u8, Vec<Key>> {
+        [(4, vec![Key::BTN_STYLUS]), (6, vec![Key::BTN_STYLUS2])]
+            .into_iter()
+            .collect()
     }
 
     fn smooth_coordinates(&mut self, x: i32, y: i32) -> (i32, i32) {
         let target_x = x as f32;
         let target_y = y as f32;
+
+        // If pen was just lifted and is touching again — snap to current position
+        // to avoid the cursor "dragging" from the old coordinates.
+        if !self.was_touching {
+            self.last_x = target_x;
+            self.last_y = target_y;
+            return (x, y);
+        }
 
         let dx = target_x - self.last_x;
         let dy = target_y - self.last_y;
@@ -239,7 +247,7 @@ impl DeviceDispatcher {
 
     fn binary_flags_to_tablet_key_events(&mut self, raw_button_as_flags: u16) {
         (0..14)
-            .filter(|i| ![10, 11].contains(i))
+            .filter(|i| !Self::SKIPPED_BUTTON_INDICES.contains(i))
             .for_each(|i| self.emit_tablet_key_event(i, raw_button_as_flags));
     }
 
@@ -320,13 +328,22 @@ impl DeviceDispatcher {
 
     fn normalize_pressure(&self, raw_pressure: i32) -> i32 {
         let val = Self::RAW_PRESSURE_POINTS - raw_pressure;
-
         let config = self.config.read().unwrap();
 
-        if val <= config.pressure_threshold as i32 {
+        // Hysteresis: use a higher threshold for release than for press.
+        // This prevents the "hook" artifact where a nearly-lifted pen still
+        // registers as touching for a few extra frames.
+        let threshold = if self.was_touching {
+            (config.pressure_threshold as f32 * config.release_threshold_multiplier) as i32
+        } else {
+            config.pressure_threshold as i32
+        };
+
+        if val <= threshold {
             0
         } else {
-            (val as f32 * config.sensitivity) as i32
+            (val as f32 * config.sensitivity)
+                .clamp(0.0, Self::MAX_PRESSURE as f32) as i32
         }
     }
 
@@ -378,27 +395,32 @@ impl DeviceDispatcher {
         } {
             if is_multimedia_area {
                 if state == Self::PRESSED {
-                    self.last_pressed_media_button = (x / self.media_button_width) as u8
+                    self.last_pressed_media_button = (x / self.media_button_width) as u8;
                 }
                 if let Some(keys) = self
                     .media_button_id_to_key_code_map
                     .get(&self.last_pressed_media_button)
                 {
-                    for key in keys {
+                    for key in keys.clone() {
                         self.media_keyboard
                             .emit(&[InputEvent::new(EventType::KEY, key.code(), state)])
                             .expect("Error emitting media keys.")
                     }
                 }
             } else {
-                if let Some(keys) = self
-                    .media_button_id_to_key_code_map
-                    .get(&self.last_pressed_media_button)
-                {
-                    for key in keys {
-                        self.media_keyboard
-                            .emit(&[InputEvent::new(EventType::KEY, key.code(), Self::RELEASED)])
-                            .expect("Error emitting media keys.")
+                // Only release the media button if we were previously in the media area.
+                // Avoids spuriously re-releasing a long-forgotten media key when the pen
+                // is lifted from the drawing surface.
+                if state == Self::RELEASED && self.was_in_multimedia_area {
+                    if let Some(keys) = self
+                        .media_button_id_to_key_code_map
+                        .get(&self.last_pressed_media_button)
+                    {
+                        for key in keys.clone() {
+                            self.media_keyboard
+                                .emit(&[InputEvent::new(EventType::KEY, key.code(), Self::RELEASED)])
+                                .expect("Error emitting media keys.")
+                        }
                     }
                 }
                 self.virtual_pen
@@ -411,6 +433,7 @@ impl DeviceDispatcher {
             }
         }
         self.was_touching = is_touching;
+        self.was_in_multimedia_area = is_multimedia_area;
     }
 
     fn raw_pen_buttons_to_pen_key_events(&mut self, pen_button: u8) {

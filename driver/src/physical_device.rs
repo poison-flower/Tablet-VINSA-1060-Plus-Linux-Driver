@@ -8,7 +8,7 @@ use std::time::Duration;
 pub struct PhysicalDevice {
     device: Device<GlobalContext>,
     device_handle: DeviceHandle<GlobalContext>,
-    endpoint_address: u8,
+    endpoint_address: Option<u8>,
 }
 
 impl PhysicalDevice {
@@ -18,7 +18,7 @@ impl PhysicalDevice {
         let device_handle = device.open()?; 
 
         Ok(PhysicalDevice {
-            endpoint_address: 0,
+            endpoint_address: None,
             device_handle,
             device,
         })
@@ -39,7 +39,7 @@ impl PhysicalDevice {
                     if endpoint_descriptor.transfer_type() == TransferType::Interrupt
                         && endpoint_descriptor.max_packet_size() == 64
                     {
-                        self.endpoint_address = endpoint_descriptor.address();
+                        self.endpoint_address = Some(endpoint_descriptor.address());
                     }
                 }
             }
@@ -53,8 +53,9 @@ impl PhysicalDevice {
     }
 
     pub fn read_device_responses(&self, buffer: &mut [u8]) -> Result<usize, RusbError> {
+        let addr = self.endpoint_address.ok_or(RusbError::NotFound)?;
         self.device_handle
-            .read_interrupt(self.endpoint_address, buffer, Duration::from_secs(1))
+            .read_interrupt(addr, buffer, Duration::from_secs(1))
     }
 
     pub fn set_full_mode(&mut self) -> &mut Self {
