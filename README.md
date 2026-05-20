@@ -32,7 +32,7 @@ In the original code, drawing quickly in graphic design software (such as Krita,
 
 You will need the Rust compiler (Cargo) installed on your system beforehand.
 ```bash
-git clone https://github.com/poison-flower/Tablet-VINSA-1060-Plus-Linux-Driver.git vinsa-1060-driver.git
+git clone https://github.com/poison-flower/Tablet-VINSA-1060-Plus-Linux-Driver.git vinsa-1060-driver
 cd vinsa-1060-driver/driver/
 ```
 
