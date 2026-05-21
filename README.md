@@ -19,12 +19,10 @@ In the original code, drawing quickly in graphic design software (such as Krita,
 - Now, the Linux kernel receives the data for the new point simultaneously, making the drawn lines perfectly smooth.
 
 ## Some additional features and fixes
-- Pressure hysteresis — eliminates hook artifacts at the end of strokes; configurable via the settings GUI (`Release Threshold Multiplier`)
 - Coordinate snap on touch — cursor no longer drifts from the previous lift point when starting a new stroke
 - Media key fix — media keys no longer emit a spurious release event when lifting the pen from the drawing surface
 - Safe USB endpoint handling — driver returns a proper error instead of writing to endpoint address 0 if initialization fails
 - Clean shutdown — config monitor thread now exits correctly on SIGINT/SIGTERM
-- Settings GUI — added slider for `Release Threshold Multiplier` (1.0–2.0)
 
 ---
 
@@ -74,42 +72,6 @@ and adjust settings or edit ```~/.config/v1060p-driver/settings.json```
 
 No driver reload needed!
 
-## 🔄 Running as a System Service (systemd)
-
-If you want the driver to start automatically in the background when your computer boots up (so you don't have to keep a terminal window open), you can set it up as a `systemd` service.
-
-Create the Service File
-Open your terminal and create a new service configuration file:
-```bash
-sudo nano /etc/systemd/system/v1060p.service
-```
-Paste the Configuration
-```bash
-[Unit]
-Description=VINSA 1060 Plus Tablet Driver
-After=multi-user.target
-
-[Service]
-Type=simple
-ExecStart=/usr/bin/v1060p-driver
-Restart=always
-RestartSec=2
-
-[Install]
-WantedBy=multi-user.target
-```
-Enable and Start the Service
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now v1060p
-```
-```bash
-sudo systemctl status v1060p
-```
-To view system logs
-```bash
-sudo journalctl -u v1060p -f
-```
 ## ⚠️ System Hang / Slow Boot with Tablet Connected
 
 The VINSA 1060 Plus presents itself as a USB Mass Storage device (fake CD-ROM) before switching to HID mode. During system boot, the Linux kernel attempts to initialize this fake CD-ROM, which causes:
