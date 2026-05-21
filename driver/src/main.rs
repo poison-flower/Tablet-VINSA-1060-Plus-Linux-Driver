@@ -19,7 +19,7 @@ const VID: u16 = 0x08f2;
 const PID: u16 = 0x6811;
 
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)] 
+#[command(author, version, about, long_about = None)]
 struct Args {
     #[arg(short, long)]
     config: bool,
@@ -37,9 +37,9 @@ fn main() {
     }
 
     let initial_config = AppConfig::load();
-    println!("Loaded config: Threshold={}, Sensitivity={}", 
-            initial_config.pressure_threshold, initial_config.sensitivity);
-    
+    println!("Loaded config: Threshold={}, Sensitivity={}",
+             initial_config.pressure_threshold, initial_config.sensitivity);
+
     let config = Arc::new(RwLock::new(initial_config));
 
     let mut data_reader = RawDataReader::new();
@@ -62,8 +62,8 @@ fn main() {
     thread::spawn(move || {
         let path = AppConfig::get_config_path();
         let mut last_mtime = fs::metadata(&path)
-            .and_then(|m| m.modified())
-            .ok();
+        .and_then(|m| m.modified())
+        .ok();
 
         while !shutdown_monitor.load(Ordering::Relaxed) {
             thread::sleep(Duration::from_millis(1000));
@@ -79,7 +79,7 @@ fn main() {
                         println!("Config file changed, reloading...");
                         let new_config = AppConfig::load();
                         println!("New config: Threshold={}, Sensitivity={}",
-                             new_config.pressure_threshold, new_config.sensitivity);
+                                 new_config.pressure_threshold, new_config.sensitivity);
 
                         if let Ok(mut w) = config_monitor.write() {
                             *w = new_config;

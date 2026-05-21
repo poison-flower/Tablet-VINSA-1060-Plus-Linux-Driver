@@ -11,10 +11,6 @@ const APP_NAME: &str = "v1060p-driver";
 pub struct AppConfig {
     pub pressure_threshold: u16,
     pub sensitivity: f32,
-    /// How much higher the release threshold is relative to the press threshold.
-    /// E.g. 1.15 means the pen must drop 15% below the press threshold before
-    /// the stroke is considered lifted. Eliminates "hook" artifacts at stroke end.
-    pub release_threshold_multiplier: f32,
 }
 
 impl Default for AppConfig {
@@ -22,7 +18,6 @@ impl Default for AppConfig {
         Self {
             pressure_threshold: 510,
             sensitivity: 5.0,
-            release_threshold_multiplier: 1.15,
         }
     }
 }

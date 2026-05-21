@@ -79,8 +79,6 @@ pub struct DeviceDispatcher {
     virtual_keyboard: VirtualDevice,
     media_keyboard: VirtualDevice,
     was_touching: bool,
-    /// Tracks whether the pen was in the multimedia strip on the previous frame.
-    /// Used to avoid spuriously releasing a media key when lifting from the drawing surface.
     was_in_multimedia_area: bool,
     last_x: f32,
     last_y: f32,
@@ -96,40 +94,32 @@ impl DeviceDispatcher {
     const MAX_PRESSURE: i32 = 8191;
     const RAW_PRESSURE_POINTS: i32 = 2000;
     const MEDIA_BUTTONS_COUNT: i32 = 10;
-    /// Button bit-indices that are not mapped to any action and must be skipped.
-    const SKIPPED_BUTTON_INDICES: &'static [u8] = &[10, 11];
 
     pub fn new(config: Arc<RwLock<AppConfig>>) -> Self {
         let media_map = Self::build_media_button_map();
         let tablet_map = Self::build_tablet_button_map();
         let pen_map = Self::build_pen_button_map();
 
-        let virtual_pen = Self::virtual_pen_builder(
-            &pen_map.values().flatten().cloned().collect::<Vec<Key>>(),
-        )
-        .expect("Error building virtual pen");
-
-        let virtual_keyboard = Self::virtual_keyboard_builder(
-            &tablet_map.values().flatten().cloned().collect::<Vec<Key>>(),
-        )
-        .expect("Error building virtual keyboard");
-
-        let media_keyboard = Self::virtual_keyboard_builder(
-            &media_map.values().flatten().cloned().collect::<Vec<Key>>(),
-        )
-        .expect("Error building media keyboard");
-
         DeviceDispatcher {
             config,
             tablet_last_raw_pressed_buttons: 0xFFFF,
             pen_last_raw_pressed_button: 0,
             last_pressed_media_button: 0,
-            media_button_id_to_key_code_map: media_map,
-            tablet_button_id_to_key_code_map: tablet_map,
-            pen_button_id_to_key_code_map: pen_map,
-            virtual_pen,
-            virtual_keyboard,
-            media_keyboard,
+            media_button_id_to_key_code_map: media_map.clone(),
+            tablet_button_id_to_key_code_map: tablet_map.clone(),
+            pen_button_id_to_key_code_map: pen_map.clone(),
+            virtual_pen: Self::virtual_pen_builder(
+                &pen_map.values().flatten().cloned().collect::<Vec<Key>>(),
+            )
+            .expect("Error building virtual pen"),
+            virtual_keyboard: Self::virtual_keyboard_builder(
+                &tablet_map.values().flatten().cloned().collect::<Vec<Key>>(),
+            )
+            .expect("Error building virtual keyboard"),
+            media_keyboard: Self::virtual_keyboard_builder(
+                &media_map.values().flatten().cloned().collect::<Vec<Key>>(),
+            )
+            .expect("Error building media keyboard"),
             was_touching: false,
             was_in_multimedia_area: false,
             last_x: (Self::MAX_X / 2) as f32,
@@ -247,7 +237,7 @@ impl DeviceDispatcher {
 
     fn binary_flags_to_tablet_key_events(&mut self, raw_button_as_flags: u16) {
         (0..14)
-            .filter(|i| !Self::SKIPPED_BUTTON_INDICES.contains(i))
+            .filter(|i| ![10, 11].contains(i))
             .for_each(|i| self.emit_tablet_key_event(i, raw_button_as_flags));
     }
 
@@ -328,18 +318,10 @@ impl DeviceDispatcher {
 
     fn normalize_pressure(&self, raw_pressure: i32) -> i32 {
         let val = Self::RAW_PRESSURE_POINTS - raw_pressure;
+
         let config = self.config.read().unwrap();
 
-        // Hysteresis: use a higher threshold for release than for press.
-        // This prevents the "hook" artifact where a nearly-lifted pen still
-        // registers as touching for a few extra frames.
-        let threshold = if self.was_touching {
-            (config.pressure_threshold as f32 * config.release_threshold_multiplier) as i32
-        } else {
-            config.pressure_threshold as i32
-        };
-
-        if val <= threshold {
+        if val <= config.pressure_threshold as i32 {
             0
         } else {
             (val as f32 * config.sensitivity)
@@ -400,13 +382,13 @@ impl DeviceDispatcher {
                 if let Some(keys) = self
                     .media_button_id_to_key_code_map
                     .get(&self.last_pressed_media_button)
-                {
-                    for key in keys.clone() {
-                        self.media_keyboard
+                    {
+                        for key in keys.clone() {
+                            self.media_keyboard
                             .emit(&[InputEvent::new(EventType::KEY, key.code(), state)])
                             .expect("Error emitting media keys.")
+                        }
                     }
-                }
             } else {
                 // Only release the media button if we were previously in the media area.
                 // Avoids spuriously re-releasing a long-forgotten media key when the pen
@@ -415,21 +397,21 @@ impl DeviceDispatcher {
                     if let Some(keys) = self
                         .media_button_id_to_key_code_map
                         .get(&self.last_pressed_media_button)
-                    {
-                        for key in keys.clone() {
-                            self.media_keyboard
+                        {
+                            for key in keys.clone() {
+                                self.media_keyboard
                                 .emit(&[InputEvent::new(EventType::KEY, key.code(), Self::RELEASED)])
                                 .expect("Error emitting media keys.")
+                            }
                         }
-                    }
                 }
                 self.virtual_pen
-                    .emit(&[InputEvent::new(
-                        EventType::KEY,
-                        Key::BTN_TOUCH.code(),
-                        state,
-                    )])
-                    .expect("Error emitting Touch");
+                .emit(&[InputEvent::new(
+                    EventType::KEY,
+                    Key::BTN_TOUCH.code(),
+                                        state,
+                )])
+                .expect("Error emitting Touch");
             }
         }
         self.was_touching = is_touching;

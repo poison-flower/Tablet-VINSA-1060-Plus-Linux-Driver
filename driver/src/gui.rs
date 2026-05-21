@@ -50,21 +50,6 @@ impl eframe::App for ConfigEditor {
                 .step_by(0.1)
             );
 
-            ui.add_space(10.0);
-
-            ui.label("Release Threshold Multiplier:");
-            ui.add(egui::Slider::new(
-                &mut self.config.release_threshold_multiplier,
-                1.0..=2.0)
-                .text("x")
-                .step_by(0.05)
-            );
-            ui.label(
-                egui::RichText::new("Higher = pen lifts more cleanly, less responsive")
-                    .small()
-                    .weak()
-            );
-
             ui.separator();
 
             if ui.button("Save").clicked() {
